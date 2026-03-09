@@ -1,0 +1,21 @@
+---
+# roles/routeros_bootstrap/vars/main.yml
+
+__routeros_bootstrap_default_admin: "admin"
+__routeros_bootstrap_default_ip: "192.168.88.1"
+__routeros_bootstrap_rendered_scripts_path: "./rendered_scripts"
+__routeros_bootstrap_script_suffix: "_bootstrap.rsc"
+__routeros_bootstrap_crts_key_size: "prime256v1"
+__routeros_bootstrap_ssh_settings:
+  host_key_type: "ed25519"
+  ciphers: "aes-gcm"
+  port: 22
+__routeros_bootstrap_min_password_length: 16
+__routeros_bootstrap_min_password_categories: 4
+__routeros_bootstrap_winbox_settings:
+  port: 8291
+  mac_ping: "no"
+__routeros_bootstrap_api_ssl_port: 8729
+__routeros_bootstrap_ssh_pubkey_temp_file: "{{ routeros_bootstrap_admin_user.name }}_ssh_pubkey"
+
+# eof

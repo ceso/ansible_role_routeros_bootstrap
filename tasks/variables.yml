@@ -1,0 +1,128 @@
+---
+# roles/routeros_bootstrap/tasks/variables.yml
+
+- name: Define routeros_bootstrap_rendered_scripts_path
+  ansible.builtin.set_fact:
+    routeros_bootstrap_rendered_scripts_path: "{{ __routeros_bootstrap_rendered_scripts_path }}"
+  when: routeros_bootstrap_rendered_scripts_path is not defined
+
+- name: Define routeros_bootstrap_script_suffix
+  ansible.builtin.set_fact:
+    routeros_bootstrap_script_suffix: "{{ __routeros_bootstrap_script_suffix }}"
+  when: routeros_bootstrap_script_suffix is not defined
+
+- name: Define routeros_bootstrap_api_ssl_port
+  ansible.builtin.set_fact:
+    routeros_bootstrap_api_ssl_port: "{{ __routeros_bootstrap_api_ssl_port }}"
+  when: routeros_bootstrap_api_ssl_port is not defined
+
+- name: Define routeros_bootstrap_crts_key_size
+  ansible.builtin.set_fact:
+    routeros_bootstrap_crts_key_size: "{{ __routeros_bootstrap_crts_key_size }}"
+  when: routeros_bootstrap_crts_key_size is not defined
+
+- name: Define routeros_bootstrap_ssh_settings
+  ansible.builtin.set_fact:
+    routeros_bootstrap_ssh_settings: "{{ __routeros_bootstrap_ssh_settings }}"
+  when: routeros_bootstrap_ssh_settings is not defined
+
+- name: Define routeros_bootstrap_default_admin
+  ansible.builtin.set_fact:
+    routeros_bootstrap_default_admin: "{{ __routeros_bootstrap_default_admin }}"
+  when: routeros_bootstrap_default_admin is not defined
+
+- name: Define routeros_bootstrap_min_password_length
+  ansible.builtin.set_fact:
+    routeros_bootstrap_min_password_length: "{{ __routeros_bootstrap_min_password_length }}"
+  when: routeros_bootstrap_min_password_length is not defined
+
+- name: Define routeros_bootstrap_min_password_categories
+  ansible.builtin.set_fact:
+    routeros_bootstrap_min_password_categories: "{{ __routeros_bootstrap_min_password_categories }}"
+  when: routeros_bootstrap_min_password_categories is not defined
+
+- name: Define routeros_bootstrap_winbox_settings
+  ansible.builtin.set_fact:
+    routeros_bootstrap_winbox_settings: "{{ __routeros_bootstrap_winbox_settings }}"
+  when: routeros_bootstrap_winbox_settings is not defined
+
+- name: Define routeros_bootstrap_default_ip
+  ansible.builtin.set_fact:
+    routeros_bootstrap_default_ip: "{{ __routeros_bootstrap_default_ip }}"
+  when: routeros_bootstrap_default_ip is not defined
+
+# Prompt for factory default admin password
+- name: Prompt for default admin password
+  ansible.builtin.pause:
+    prompt: "Enter password for '{{ routeros_bootstrap_default_admin }}' on {{ routeros_bootstrap_default_ip }} ({{ inventory_hostname }})"
+    echo: false
+  register: __routeros_bootstrap_admin_password_prompt
+
+- name: Set default admin password from prompt
+  ansible.builtin.set_fact:
+    routeros_bootstrap_default_admin_password: "{{ __routeros_bootstrap_admin_password_prompt.user_input }}"
+  no_log: true
+
+# Prompt for new admin user password
+- name: Prompt for new admin user password
+  ansible.builtin.pause:
+    prompt: "Enter password for new admin user '{{ routeros_bootstrap_admin_user.name }}' on {{ inventory_hostname }}"
+    echo: false
+  register: __routeros_bootstrap_admin_user_password_prompt
+
+- name: Set admin user password from prompt
+  ansible.builtin.set_fact:
+    routeros_bootstrap_admin_user_password: "{{ __routeros_bootstrap_admin_user_password_prompt.user_input }}"
+  no_log: true
+
+# Normalize MAC addresses
+- name: Normalize bastion MAC address to uppercase
+  ansible.builtin.set_fact:
+    routeros_bootstrap_bastion_host: >-
+      {{ routeros_bootstrap_bastion_host | combine({
+         'mac_addr': routeros_bootstrap_bastion_host.mac_addr | upper
+      }) }}
+
+- name: Normalize Local-OOB allowed MAC addresses to uppercase
+  ansible.builtin.set_fact:
+    routeros_bootstrap_admin_interfaces: >-
+      {{ routeros_bootstrap_admin_interfaces | combine({
+         'localoob': routeros_bootstrap_admin_interfaces.localoob | combine({
+           'allowed_mac_addrs': routeros_bootstrap_admin_interfaces.localoob.allowed_mac_addrs | map('upper') | list
+         })
+      }, recursive=true) }}
+  when: routeros_bootstrap_admin_interfaces.localoob is defined
+
+# Validate required host variables
+- name: Validate required host variables are defined
+  ansible.builtin.assert:
+    that:
+      - routeros_bootstrap_admin_interfaces is defined
+      - routeros_bootstrap_admin_interfaces.mgmt is defined
+      - routeros_bootstrap_admin_interfaces.mgmt.bridge_name is defined
+      - routeros_bootstrap_admin_interfaces.mgmt.nic_name is defined
+      - routeros_bootstrap_admin_interfaces.mgmt.ip is defined
+      - routeros_bootstrap_admin_interfaces.mgmt.netmask is defined
+      - routeros_bootstrap_bastion_host is defined
+      - routeros_bootstrap_bastion_host.ip is defined
+      - routeros_bootstrap_bastion_host.mac_addr is defined
+      - routeros_bootstrap_admin_user is defined
+      - routeros_bootstrap_admin_user.name is defined
+      - routeros_bootstrap_admin_user.ssh_pubkey is defined
+    fail_msg: >-
+      Host '{{ inventory_hostname }}' is missing required variables.
+      Must define: routeros_bootstrap_admin_interfaces.mgmt (bridge_name, nic_name, ip, netmask),
+      routeros_bootstrap_bastion_host (ip, mac_addr),
+      routeros_bootstrap_admin_user (name, ssh_pubkey).
+    quiet: true
+
+- name: Define routeros_bootstrap_ssh_pubkey_temp_file
+  ansible.builtin.set_fact:
+    routeros_bootstrap_ssh_pubkey_temp_file: "{{ __routeros_bootstrap_ssh_pubkey_temp_file }}"
+  when: routeros_bootstrap_ssh_pubkey_temp_file is not defined
+
+- name: Set bootstrap script filename
+  ansible.builtin.set_fact:
+    routeros_bootstrap_script_filename: "{{ inventory_hostname }}{{ routeros_bootstrap_script_suffix }}"
+
+# eof

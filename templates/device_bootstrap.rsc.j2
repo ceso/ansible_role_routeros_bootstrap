@@ -1,0 +1,139 @@
+{% macro ros_escape(value) %}{{ value | replace('\\', '\\\\') | replace('$', '\\$') | replace('"', '\\"') | replace('?', '\\?') }}{% endmacro %}
+###########################################
+# MANAGED BY ANSIBLE
+# =========================================
+# AUTHOR
+#   ceso
+#
+# SYNOPSIS
+#   /system/reset-configuration no-defaults=yes skip-backup=yes run-after-reset={{ inventory_hostname }}{{ routeros_bootstrap_script_suffix }}
+#
+# DESCRIPTION
+#   Performs a Day 0 bootstrap on a RouterOS device.
+#   After execution the device is left in a minimal state ready for further provisioning via HTTPS API.
+#
+#   Bootstrap actions:
+#     * Configure MGMT interface
+#     * Optionally configure a Local-OOB interface if defined (useful for devices without a console port)
+#     * Enable HTTPS API (WebFig) with a temporary TLS certificate
+#     * Apply basic port security on all administration interfaces
+#
+# EXECUTION
+#   Upload this file to the device (e.g., via WinBox), then run the reset command shown in SYNOPSIS to execute it.
+############################################
+
+:log info "[*] Starting bootstrap of device {{ inventory_hostname }}"
+
+# ------------------------------------------
+# Interface List (Easier L3 Firewall rules)
+# ------------------------------------------
+/interface/list/add name={{ routeros_bootstrap_admin_iface_list }} comment="Management Interfaces"
+
+# ------------------------------------------
+# Bridges
+# ------------------------------------------
+# === MGMT / Local-OOB L2 Port Security Model ===
+# Threat Model:
+# - Untrusted endpoints may be physically connected to MGMT or LocalOOB interfaces
+# - Physical access does not imply trust or authorization
+# - Endpoints may attempt:
+#   * MAC address spoofing to impersonate authorized devices
+#   * ARP probing and broadcast-based network discovery
+#   * Multicast enumeration (LLDP, mDNS, IPv6 ND, etc.)
+#   * Silent Layer-2 scanning and lateral movement
+#
+# Security Controls:
+# (Applied jointly via bridge port hardening and explicit port security rules)
+#
+# - Disable MAC learning (learn=no) to prevent MAC spoofing and CAM (Content Addressable Memory) table poisoning
+# - Drop unknown unicast frames (unknown-unicast-flood=no) to block silent L2 scanning and unauthorized lateral communication
+# - Drop unknown multicast frames (unknown-multicast-flood=no) to prevent multicast-based discovery and enumeration protocols
+# - Drop broadcast frames (broadcast-flood=no) to mitigate ARP probing, broadcast storms, and unauthenticated network discovery
+# - Mark ports as untrusted (trusted=no) to ensure no bridge-level security bypass is possible
+#
+# - Explicitly whitelist authorized MAC addresses per port using static bridge host entries
+# - Enforce ingress MAC filtering using bridge firewall rules
+# - Apply a default-deny policy by dropping all non-whitelisted MAC traffic
+#
+# Outcome:
+# - Only explicitly authorized devices can communicate on MGMT and LocalOOB ports
+# - Unauthorized access, MAC spoofing, and Layer-2 discovery are deterministically blocked
+# - Bridge is used strictly as an L2 enforcement boundary, not as a trust domain
+# ------------------------------------------
+
+# MGMT
+# ------------------------------------------
+/interface/bridge/add name={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }} protocol-mode=none arp=reply-only comment="{{ routeros_bootstrap_admin_interfaces.mgmt.comment }}"
+/interface/bridge/port/add bridge={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }} interface={{ routeros_bootstrap_admin_interfaces.mgmt.nic_name }} hw=no learn=no unknown-unicast-flood=no unknown-multicast-flood=no broadcast-flood=no trusted=no
+/interface/list/member/add list={{ routeros_bootstrap_admin_iface_list }} interface={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }}
+/interface/bridge/host/add bridge={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }} interface={{ routeros_bootstrap_admin_interfaces.mgmt.nic_name }} mac-address={{ routeros_bootstrap_bastion_host.mac_addr }} disabled=no
+/interface/bridge/filter/add action=accept chain=input in-interface={{ routeros_bootstrap_admin_interfaces.mgmt.nic_name }} src-mac-address={{ routeros_bootstrap_bastion_host.mac_addr }}/FF:FF:FF:FF:FF:FF
+/interface/bridge/filter/add action=drop chain=input in-interface={{ routeros_bootstrap_admin_interfaces.mgmt.nic_name }}
+/ip/arp/add address={{ routeros_bootstrap_bastion_host.ip }} mac-address={{ routeros_bootstrap_bastion_host.mac_addr }} interface={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }} published=no comment="{{ routeros_bootstrap_bastion_host.comment }}"
+/ip/address/add address={{ routeros_bootstrap_admin_interfaces.mgmt.ip }}/{{ routeros_bootstrap_admin_interfaces.mgmt.netmask }} interface={{ routeros_bootstrap_admin_interfaces.mgmt.bridge_name }} comment="{{ routeros_bootstrap_admin_interfaces.mgmt.comment }}"
+
+{% if routeros_bootstrap_admin_interfaces.localoob is defined %}
+# ------------------------------------------
+# LocalOOB
+# ------------------------------------------
+# Restriction already takes place at L2 filtering. ARP is ok to be enabled
+/interface/bridge/add name={{ routeros_bootstrap_admin_interfaces.localoob.bridge_name }} protocol-mode=none arp=enabled comment="{{ routeros_bootstrap_admin_interfaces.localoob.comment }}"
+/interface/bridge/port/add bridge={{ routeros_bootstrap_admin_interfaces.localoob.bridge_name }} interface={{ routeros_bootstrap_admin_interfaces.localoob.nic_name }} hw=no learn=no unknown-unicast-flood=no unknown-multicast-flood=no broadcast-flood=no trusted=no
+/interface/list/member/add list={{ routeros_bootstrap_admin_iface_list }} interface={{ routeros_bootstrap_admin_interfaces.localoob.bridge_name }}
+
+{% for allowed_mac in routeros_bootstrap_admin_interfaces.localoob.allowed_mac_addrs %}
+/interface/bridge/host/add bridge={{ routeros_bootstrap_admin_interfaces.localoob.bridge_name }} interface={{ routeros_bootstrap_admin_interfaces.localoob.nic_name }} mac-address={{ allowed_mac }} disabled=no
+/interface/bridge/filter/add action=accept chain=input in-interface={{ routeros_bootstrap_admin_interfaces.localoob.nic_name }} src-mac-address={{ allowed_mac }}/FF:FF:FF:FF:FF:FF
+{% endfor %}
+
+/interface/bridge/filter/add action=drop chain=input in-interface={{ routeros_bootstrap_admin_interfaces.localoob.nic_name }}
+
+/ip/address/add address={{ routeros_bootstrap_admin_interfaces.localoob.ip }}/{{ routeros_bootstrap_admin_interfaces.localoob.netmask }} interface={{ routeros_bootstrap_admin_interfaces.localoob.bridge_name }} comment="{{ routeros_bootstrap_admin_interfaces.localoob.comment }}"
+{% endif %}
+
+# ------------------------------------------
+# Administration services
+# ------------------------------------------
+# Enable API SSL
+/certificate/add name="{{ routeros_bootstrap_ca_crt.name }}" common-name="{{ routeros_bootstrap_ca_crt.common_name }}" key-size={{ routeros_bootstrap_crts_key_size }} key-usage={{ routeros_bootstrap_ca_crt.key_usage }} trusted=yes
+/certificate/sign {{ routeros_bootstrap_ca_crt.name }}
+/certificate/add name="{{ routeros_bootstrap_crt.name }}" common-name="{{ routeros_bootstrap_admin_interfaces.mgmt.ip }}" organization="{{ routeros_bootstrap_crt.organization }}" days-valid={{ routeros_bootstrap_crt.days_valid }} key-size={{ routeros_bootstrap_crts_key_size }} key-usage={{ routeros_bootstrap_crt.key_usage }} trusted=yes
+/certificate/sign ca={{ routeros_bootstrap_ca_crt.name }} {{ routeros_bootstrap_crt.name }}
+/ip/service/set api-ssl certificate={{ routeros_bootstrap_crt.name }} port={{ routeros_bootstrap_api_ssl_port }} disabled=no
+
+:log info "[+] API SSL enabled on port {{ routeros_bootstrap_api_ssl_port }}"
+
+# Enable SSH
+/ip/ssh/set always-allow-password-login=no strong-crypto=yes host-key-type={{ routeros_bootstrap_ssh_settings.host_key_type }} ciphers={{ routeros_bootstrap_ssh_settings.ciphers }} forwarding-enabled=no
+/ip/ssh/regenerate-host-key
+
+/ip/service/set ssh port={{ routeros_bootstrap_ssh_settings.port }} disabled=no
+
+# Enable WinBox & Disable MAC server globally
+/tool/mac-server/set allowed-interface-list=none
+/tool/mac-server/mac-winbox/set allowed-interface-list={{ routeros_bootstrap_admin_iface_list }}
+/tool/mac-server/ping/set enabled={{ routeros_bootstrap_winbox_settings.mac_ping }}
+
+/ip/service/set winbox port={{ routeros_bootstrap_winbox_settings.port }} disabled=no
+
+# ------------------------------------------
+# User Administration
+# ------------------------------------------
+/user/settings/set minimum-password-length={{ routeros_bootstrap_min_password_length }} minimum-categories={{ routeros_bootstrap_min_password_categories }}
+/user/add name={{ routeros_bootstrap_admin_user.name }} group=full password="{{ ros_escape(routeros_bootstrap_admin_user_password) }}" comment="Bootstrap admin"
+/file/print file={{ routeros_bootstrap_ssh_pubkey_temp_file }}
+:delay 2
+/file/set {{ routeros_bootstrap_ssh_pubkey_temp_file }}.txt contents="{{ routeros_bootstrap_admin_user.ssh_pubkey }}"
+:delay 1
+/user/ssh-keys/import user={{ routeros_bootstrap_admin_user.name }} public-key-file={{ routeros_bootstrap_ssh_pubkey_temp_file }}.txt
+/user/remove {{ routeros_bootstrap_default_admin }}
+
+# ------------------------------------------
+# Finish
+# ------------------------------------------
+/console/clear-history
+
+# Self-cleanup
+/file/remove [find name="{{ inventory_hostname }}{{ routeros_bootstrap_script_suffix }}"]
+
+:log info "[+] Bootstrap finished"

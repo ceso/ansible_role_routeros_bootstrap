@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: ceso
+  description: Bootstrap for RouterOS devices
+  license: MIT
+
+  min_ansible_version: "2.10"
+
+  galaxy_tags:
+    - routeros
+    - mikrotik
+    - bootstrap
+    - networking
+
+dependencies: []

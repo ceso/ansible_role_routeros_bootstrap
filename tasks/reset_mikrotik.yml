@@ -1,0 +1,50 @@
+---
+# roles/routeros_bootstrap/tasks/reset_mikrotik.yml
+
+- name: Upload rendered bootstrap script to device
+  ansible.netcommon.net_put:
+    src: "{{ routeros_bootstrap_rendered_scripts_path }}/{{ routeros_bootstrap_script_filename }}"
+    dest: "{{ routeros_bootstrap_script_filename }}"
+    protocol: sftp
+  vars:
+    ansible_host: "{{ routeros_bootstrap_default_ip }}"
+    ansible_user: "{{ routeros_bootstrap_default_admin }}"
+    ansible_password: "{{ routeros_bootstrap_default_admin_password }}"
+    ansible_paramiko_pty: true
+    ansible_paramiko_host_key_checking: false
+    ansible_paramiko_host_key_auto_add: true
+
+- name: Reset MikroTik device with bootstrap script
+  community.routeros.api:
+    hostname: "{{ routeros_bootstrap_default_ip }}"
+    username: "{{ routeros_bootstrap_default_admin }}"
+    password: "{{ '' if routeros_bootstrap_default_admin_password | trim == '' else routeros_bootstrap_default_admin_password }}"
+    tls: false
+    timeout: 30
+    path: system
+    cmd: "reset-configuration no-defaults=yes skip-backup=yes run-after-reset={{ routeros_bootstrap_script_filename }}"
+  delegate_to: localhost
+  register: reset_result
+  failed_when: false
+  ignore_unreachable: true
+
+- name: Show reset command result
+  ansible.builtin.debug:
+    var: reset_result
+
+- name: Wait for device to come back up after reset
+  ansible.builtin.wait_for:
+    host: "{{ routeros_bootstrap_admin_interfaces.localoob.ip if routeros_bootstrap_admin_interfaces.localoob is defined else routeros_bootstrap_admin_interfaces.mgmt.ip }}"
+    port: "{{ routeros_bootstrap_ssh_settings.port }}"
+    delay: 15
+    timeout: 300
+    state: started
+  delegate_to: localhost
+
+- name: Delete local rendered bootstrap script
+  ansible.builtin.file:
+    path: "{{ routeros_bootstrap_rendered_scripts_path }}/{{ routeros_bootstrap_script_filename }}"
+    state: absent
+  delegate_to: localhost
+
+# eof

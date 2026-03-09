@@ -1,0 +1,28 @@
+---
+# roles/routeros_bootstrap/defaults/main.yml
+#
+# Variables that MUST be provided via host_vars (no defaults):
+#   routeros_bootstrap_admin_interfaces   - dict with mgmt (and optional localoob)
+#   routeros_bootstrap_bastion_host       - dict with ip, mac_addr, comment
+#   routeros_bootstrap_admin_user         - dict with name, ssh_pubkey:
+#     name: "netadmin"
+#     ssh_pubkey: "ssh-ed25519 AAAAC3Nz... user@host"  # public key content string
+#   Password is prompted at runtime (not stored in host_vars).
+
+# Interface list name for management interfaces
+routeros_bootstrap_admin_iface_list: "MGMT"
+
+# Self-signed CA certificate settings
+routeros_bootstrap_ca_crt:
+  name: "selfCA"
+  common_name: "Bootstrap CA"
+  key_usage: "key-cert-sign,crl-sign"
+
+# Self-signed server certificate settings
+routeros_bootstrap_crt:
+  name: "selfCRT"
+  key_usage: "tls-server"
+  organization: "ACME Inc."
+  days_valid: 7
+
+# eof

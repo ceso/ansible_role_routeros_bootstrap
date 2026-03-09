@@ -1,0 +1,18 @@
+---
+# roles/routeros_bootstrap/tasks/render_bootstrap.yml
+
+- name: Ensure rendered scripts directory exists on controller
+  ansible.builtin.file:
+    path: "{{ routeros_bootstrap_rendered_scripts_path }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Render bootstrap script locally
+  ansible.builtin.template:
+    src: "device_bootstrap.rsc.j2"
+    dest: "{{ routeros_bootstrap_rendered_scripts_path }}/{{ routeros_bootstrap_script_filename }}"
+    mode: '0644'
+  delegate_to: localhost
+
+# eof

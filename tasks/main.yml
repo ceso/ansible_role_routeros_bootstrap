@@ -1,0 +1,25 @@
+---
+# roles/routeros_bootstrap/tasks/main.yml
+
+- name: Include variables configuration
+  ansible.builtin.include_tasks:
+    file: variables.yml
+    apply:
+      tags: [render, deploy]
+  tags: [render, deploy]
+
+- name: Include bootstrap script rendering
+  ansible.builtin.include_tasks:
+    file: render_bootstrap.yml
+    apply:
+      tags: [render, deploy]
+  tags: [render, deploy]
+
+- name: Include device reset and upload
+  ansible.builtin.include_tasks:
+    file: reset_mikrotik.yml
+    apply:
+      tags: [deploy]
+  tags: [deploy]
+
+# eof

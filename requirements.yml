@@ -1,0 +1,5 @@
+---
+# Ansible dependencies
+collections:
+  - name: ansible.netcommon
+  - name: community.routeros
